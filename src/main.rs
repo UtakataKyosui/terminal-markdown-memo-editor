@@ -112,22 +112,17 @@ impl App<'_> {
 
         // --- Left: Memo Tree ---
         // Construct Tree Items:
-        // Root -> Date Dir -> Memo File (Title)
+        // Root -> Date Dir -> Memo File -> Headers -> Paragraphs
         
-        // Group memos by parent directory (Date)
-        // We assume memos are strictly YYYY-MM-DD/HH-mm-ss.md
         let mut tree_items: Vec<TreeItem<String>> = Vec::new();
         let mut current_date: Option<String> = None;
         let mut current_date_items: Vec<TreeItem<String>> = Vec::new();
 
-        // Memos are sorted by path descending (newest first).
         for memo in &self.memos {
-            // parent dir name
              if let Some(parent) = memo.path.parent() {
                 let date_name = parent.file_name().unwrap_or_default().to_string_lossy().to_string();
                 
                 if Some(&date_name) != current_date.as_ref() {
-                    // Push previous date group
                     if let Some(d) = current_date {
                         tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
                     }
@@ -136,11 +131,19 @@ impl App<'_> {
                 }
 
                 let title = memo.title();
-                let leaf_item = TreeItem::new_leaf(memo.id.clone(), title); // Use full path/ID as leaf ID
-                current_date_items.push(leaf_item);
+                // Parse memo content into tree items
+                let memo_children = parse_markdown_to_tree(&memo.content, &memo.id);
+                
+                // Memo file is now a node with children (if any), otherwise leaf
+                let memo_item = if memo_children.is_empty() {
+                    TreeItem::new_leaf(memo.id.clone(), title)
+                } else {
+                    TreeItem::new(memo.id.clone(), title, memo_children).expect("memo id duplicate?")
+                };
+                
+                current_date_items.push(memo_item);
              }
         }
-        // Push last group
         if let Some(d) = current_date {
             tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
         }
@@ -149,16 +152,28 @@ impl App<'_> {
             .block(Block::default().borders(Borders::ALL).title("Memos"))
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
             .experimental_scrollbar(Some(ratatui::widgets::Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)));
+        
+        // Ensure formatting for items
+        // We can't customize rendering per depth easily in tui-tree-widget 0.23 without custom render logic or wrapping.
+        // But the indentation is handled by the widget.
 
         frame.render_stateful_widget(tree, main_layout[0], &mut self.tree_state);
 
         // --- Right: Preview ---
-        let block = Block::default().borders(Borders::ALL).title("Preview");
+        // Showing preview for the *selected item*
+        // If a header/paragraph is selected, we could show the whole memo or just that part.
+        // For context, showing the whole memo is probably better, maybe scrolling to the part?
+        // But Paragraph widget doesn't easily support "scroll to line".
+        // Let's just show the whole memo content for any selection within that memo.
         
-        let preview_content: Vec<Line> = if let Some(selected_ids) = self.tree_state.selected().last() {
-             // Find memo by ID (which is path string)
-             if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_ids) {
-                memo.content.lines().map(|line| {
+        let preview_text: Vec<Line> = if let Some(selected_id) = self.tree_state.selected().last() {
+            // Check if selected_id is a memo path or a sub-item (memo_path::line)
+            // IDs are constructed as "path" or "path::line_index".
+            let path_str = selected_id.split("::").next().unwrap_or("");
+            
+            if let Some(memo) = self.memos.iter().find(|m| m.id == path_str || m.path.to_string_lossy() == path_str) {
+                 // Found the memo
+                 memo.content.lines().map(|line| {
                     if line.starts_with("# ") {
                         Line::from(Span::styled(
                             line, 
@@ -183,27 +198,22 @@ impl App<'_> {
                         Line::from(line)
                     }
                 }).collect()
-             } else {
-                 vec![Line::from("Directory selected")]
-             }
+            } else {
+                 if path_str.contains(std::path::MAIN_SEPARATOR) {
+                      vec![Line::from(format!("Selected: {}", selected_id))]
+                 } else {
+                      vec![Line::from("Directory selected")]
+                 }
+            }
         } else {
-            vec![Line::from("No memo selected")]
+            vec![Line::from("No selection")]
         };
 
-        // Use Paragraph for scrollable text? For now just simple Paragraph.
-        // We might want to support scrolling in preview later, but for now just show top.
-        let preview = Paragraph::new(preview_content)
-            .block(block)
+        let preview = Paragraph::new(preview_text)
+            .block(Block::default().borders(Borders::ALL).title("Preview"))
             .wrap(ratatui::widgets::Wrap { trim: false });
         
         frame.render_widget(preview, main_layout[1]);
-
-        // --- Bottom: Help ---
-        let help_text = "n: New | Enter: Edit/Toggle | d: Delete | q: Quit | h/l/j/k or Arrows: Navigate";
-        let help = Paragraph::new(help_text)
-            .block(Block::default().borders(Borders::ALL))
-            .style(Style::default().fg(Color::Gray));
-        frame.render_widget(help, outer_layout[1]);
     }
 
     fn draw_edit(&mut self, frame: &mut Frame) {
@@ -259,32 +269,43 @@ impl App<'_> {
                 }
                 KeyCode::Enter | KeyCode::Char('e') => {
                     if let Some(selected_id) = self.tree_state.selected().last() {
-                         // Find memo by ID
-                         if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_id) {
+                         // Check if it matches a memo ID exactly or is a child of a memo
+                         let path_str = selected_id.split("::").next().unwrap_or("");
+                         
+                         if let Some(memo) = self.memos.iter().find(|m| m.id == path_str) {
+                            // If selected is exactly the memo, or a part of it, we open the memo.
+                            // However, if we selected a specific header, maybe jump to that line?
+                            // TextArea doesn't easily support "scroll to line" without cursor manipulation.
+                            // Let's just open the memo for now.
+                            
                             self.view = CurrentView::Edit;
                             let lines: Vec<String> = memo.content.lines().map(|s| s.to_string()).collect();
                             self.textarea = TextArea::new(lines);
-                            // Re-apply configuration
+                            
+                            // If a specific line was selected (ID has ::line_idx), move cursor there
+                            if let Some(line_part) = selected_id.split("::").nth(1) {
+                                if let Ok(line_idx) = line_part.parse::<usize>() {
+                                    // Move cursor to that line
+                                    self.textarea.move_cursor(tui_textarea::CursorMove::Jump(line_idx as u16, 0));
+                                }
+                            }
+
                             if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
                             self.textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                             self.editing_memo_path = Some(memo.path.clone());
                          } else {
-                            // Directory selected? Toggle it
+                            // Directory or unknown
                             self.tree_state.toggle_selected();
                          }
                     }
                 }
                 KeyCode::Char('d') => {
                     if let Some(selected_id) = self.tree_state.selected().last() {
-                         // Find memo
-                         if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_id) {
+                         let path_str = selected_id.split("::").next().unwrap_or("");
+                         if let Some(memo) = self.memos.iter().find(|m| m.id == path_str) {
                              memo.delete()?;
                              self.reload_memos()?;
-                             // Tree state might be invalid if we deleted last item in folder, but reload resets?
-                             // Ideally preserve selection or move to next. For now, reload resets slightly.
-                             // Actually reload_memos just reloads memos, tree state is ID based.
-                             // We might need to handle stale ID in tree state?
                          }
                     }
                 }
@@ -413,6 +434,60 @@ impl App<'_> {
         }
         Ok(())
     }
+}
+
+// --- Helper for Markdown Parsing ---
+fn parse_markdown_to_tree(content: &str, memo_id: &str) -> Vec<TreeItem<'static, String>> {
+    fn parse_recursive(
+        iter: &mut std::iter::Peekable<std::slice::Iter<(usize, &str)>>, 
+        min_level: usize,
+        memo_id: &str
+    ) -> Vec<TreeItem<'static, String>> {
+        let mut items = Vec::new();
+        
+        while let Some(&(i, line)) = iter.peek() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() { 
+                iter.next(); 
+                continue; 
+            }
+            
+            let (level, text) = if trimmed.starts_with("# ") { (1, trimmed[2..].to_string()) }
+            else if trimmed.starts_with("## ") { (2, trimmed[3..].to_string()) }
+            else if trimmed.starts_with("### ") { (3, trimmed[4..].to_string()) }
+            else if trimmed.starts_with("#### ") { (4, trimmed[5..].to_string()) }
+            else if trimmed.starts_with("##### ") { (5, trimmed[6..].to_string()) }
+            else if trimmed.starts_with("###### ") { (6, trimmed[7..].to_string()) }
+            else { (7, trimmed.to_string()) }; // 7 = Paragraph
+            
+            if level < min_level {
+                // Return to parent
+                break;
+            }
+            
+            // Consume this line
+            iter.next();
+            
+            let children = if level < 7 {
+                parse_recursive(iter, level + 1, memo_id)
+            } else {
+                Vec::new()
+            };
+            
+            let id = format!("{}::{}", memo_id, i);
+            let item = if children.is_empty() {
+                TreeItem::new_leaf(id, text)
+            } else {
+                TreeItem::new(id, text, children).unwrap()
+            };
+            items.push(item);
+        }
+        items
+    }
+    
+    let lines: Vec<(usize, &str)> = content.lines().enumerate().collect();
+    let mut iter = lines.iter().peekable();
+    parse_recursive(&mut iter, 1, memo_id)
 }
 
 fn main() -> Result<()> {
