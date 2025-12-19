@@ -33,6 +33,16 @@ struct App<'a> {
     editing_memo_path: Option<std::path::PathBuf>,
 }
 
+use regex::Regex;
+use once_cell::sync::Lazy;
+
+// Regex for Unordered list: ^(\s*)([-*+])\s+$ (check empty list item) or ^(\s*)([-*+])\s+(.*)
+// Regex for Ordered list: ^(\s*)(\d+)\.\s+$ (check empty) or ^(\s*)(\d+)\.\s+(.*)
+
+// We use slightly looser regex to capture prefix.
+static UNORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)([-*+])\s+").unwrap());
+static ORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)(\d+)\.\s+").unwrap());
+
 impl App<'_> {
     fn new() -> Result<Self> {
         let memos = load_memos()?;
@@ -223,6 +233,61 @@ impl App<'_> {
                     }
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.view = CurrentView::List;
+                    }
+                    KeyCode::Enter => {
+                        // Handle auto-list logic
+                        let cursor = self.textarea.cursor();
+                        let current_row = cursor.0;
+                        
+                        // Clone the current line to avoid holding an immutable borrow of textarea
+                        // while we want to mutate it later.
+                        let current_line = if current_row < self.textarea.lines().len() {
+                             self.textarea.lines()[current_row].clone()
+                        } else {
+                            String::new()
+                        };
+
+                        // Check Ordered List first
+                        if let Some(caps) = ORDERED_LIST_RE.captures(&current_line) {
+                            let old_indent = &caps[1].to_string(); // clone captures to own strings
+                            let number_str = &caps[2];
+                            let full_match = &caps[0];
+                            let full_len = full_match.len();
+                            let trimmed_len = current_line.trim_end().len();
+
+                            // Check if line is "empty" (just the list marker)
+                            if trimmed_len == full_len {
+                                // Empty list item -> Remove the list marker (clear line)
+                                self.textarea.delete_line_by_head();
+                            } else {
+                                // Append newline
+                                self.textarea.insert_newline();
+                                // Calculate next number
+                                let num: usize = number_str.parse().unwrap_or(0);
+                                let new_prefix = format!("{}{}. ", old_indent, num + 1);
+                                self.textarea.insert_str(new_prefix);
+                            }
+                        } else if let Some(caps) = UNORDERED_LIST_RE.captures(&current_line) {
+                            // let old_indent = &caps[1];
+                            // let bullet = &caps[2];
+                            let full_match = &caps[0];
+                            let full_len = full_match.len();
+                            let trimmed_len = current_line.trim_end().len();
+
+                            if trimmed_len == full_len {
+                                // Empty list item -> Remove
+                                self.textarea.delete_line_by_head();
+                            } else {
+                                // Append newline
+                                self.textarea.insert_newline();
+                                // Re-insert same prefix
+                                let prefix_str = full_match.to_string();
+                                self.textarea.insert_str(prefix_str);
+                            }
+                        } else {
+                            // Normal Enter
+                            self.textarea.input(Input::from(key));
+                        }
                     }
                     _ => {
                         let input: Input = key.into();
