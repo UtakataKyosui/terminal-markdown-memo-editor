@@ -53,8 +53,8 @@ impl App<'_> {
             eprintln!("Invalid regex: {}", e);
         }
         
-        // Style: Bold and Blue for highlighted text
-        textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+        // Style: Bold and Cyan for highlighted text (Cyan works better on dark/light than plain Blue)
+        textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
         Ok(Self {
             view: CurrentView::List,
@@ -178,7 +178,7 @@ impl App<'_> {
                     // Re-apply configuration (or clean way: create a helper `new_textarea()`)
                     // Let's just re-apply for now to be safe and simple.
                     if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
-                    self.textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+                    self.textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
                     
                     self.editing_memo_path = None;
                 }
@@ -190,7 +190,7 @@ impl App<'_> {
                             self.textarea = TextArea::new(lines);
                             // Re-apply configuration
                             if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
-                            self.textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+                            self.textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                             self.editing_memo_path = Some(memo.path.clone());
                         }
