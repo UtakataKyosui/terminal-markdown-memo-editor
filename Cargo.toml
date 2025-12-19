@@ -1,0 +1,27 @@
+[package]
+name = "terminal-markdown-memo-editor"
+version = "0.1.0"
+description = "A terminal-based Markdown memo editor using Ratatui"
+authors = ["UtakataKyosui <fill.ayaextech@gmail.com>"]
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+color-eyre = "0.6.3"
+crossterm = "0.28.0" # Downgraded to match common compatibility or keep 0.29 if safe. Template used 0.29.
+ratatui = "0.29.0" # Using stable instead of beta if possible, but template had 0.30-beta. I'll stick to 0.29 stable for compatibility with tui-textarea if needed, or check tui-textarea version.
+# tui-textarea 0.7 supports ratatui 0.29.
+tui-textarea = "0.7"
+dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+
+# Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
