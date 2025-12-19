@@ -40,11 +40,27 @@ impl App<'_> {
         if !memos.is_empty() {
             list_state.select(Some(0));
         }
+
+        let mut textarea = TextArea::default();
+        // Configure "Syntax Highlighting" (Hack using search pattern)
+        // Matches:
+        // 1. Headers: ^#{1,6} .*
+        // 2. Bold: \*\*.*?\*\*
+        // Note: Regex crate syntax.
+        // We join patterns with |
+        if let Err(e) = textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") {
+            // Should not happen with valid regex, but log/ignore if it does
+            eprintln!("Invalid regex: {}", e);
+        }
+        
+        // Style: Bold and Blue for highlighted text
+        textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+
         Ok(Self {
             view: CurrentView::List,
             memos,
             list_state,
-            textarea: TextArea::default(),
+            textarea,
             should_quit: false,
             editing_memo_path: None,
         })
@@ -155,7 +171,15 @@ impl App<'_> {
                 }
                 KeyCode::Char('n') => {
                     self.view = CurrentView::Edit;
-                    self.textarea = TextArea::default();
+                    // Reset content but KEEP configuration
+                    // TextArea::default() would lose our search pattern.
+                    // Instead, we just clear lines.
+                    self.textarea = TextArea::default(); 
+                    // Re-apply configuration (or clean way: create a helper `new_textarea()`)
+                    // Let's just re-apply for now to be safe and simple.
+                    if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
+                    self.textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+                    
                     self.editing_memo_path = None;
                 }
                 KeyCode::Enter | KeyCode::Char('e') => {
@@ -164,6 +188,10 @@ impl App<'_> {
                             self.view = CurrentView::Edit;
                             let lines: Vec<String> = memo.content.lines().map(|s| s.to_string()).collect();
                             self.textarea = TextArea::new(lines);
+                            // Re-apply configuration
+                            if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
+                            self.textarea.set_search_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
+
                             self.editing_memo_path = Some(memo.path.clone());
                         }
                     }
