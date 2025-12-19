@@ -487,6 +487,16 @@ fn parse_markdown_to_tree(content: &str, memo_id: &str) -> Vec<TreeItem<'static,
     
     let lines: Vec<(usize, &str)> = content.lines().enumerate().collect();
     let mut iter = lines.iter().peekable();
+    
+    // Skip the first non-empty line (Title) as it is already displayed as the Memo Root
+    while let Some(&(_, line)) = iter.peek() {
+        if !line.trim().is_empty() {
+             iter.next();
+             break;
+        }
+        iter.next();
+    }
+
     parse_recursive(&mut iter, 1, memo_id)
 }
 
