@@ -50,6 +50,9 @@ impl App<'_> {
         let memos = load_memos()?;
         // Initialize tree state with empty selection
         let mut tree_state = TreeState::default();
+        let root_ids: Vec<String> = memos.iter().map(|m| m.id.clone()).collect();
+        tree_state.open(root_ids);
+        
         if !memos.is_empty() {
              tree_state.select_first();
         }
@@ -212,6 +215,13 @@ impl App<'_> {
             .wrap(ratatui::widgets::Wrap { trim: false });
         
         frame.render_widget(preview, main_layout[1]);
+
+        // --- Bottom: Help ---
+        let help_text = "n: 新規作成 | Enter: 編集/展開 | Space/→: 展開/折畳 | d: 削除 | q: 終了 | ↑↓: 移動";
+        let help = Paragraph::new(help_text)
+            .block(Block::default().borders(Borders::ALL))
+            .style(Style::default().fg(Color::Gray));
+        frame.render_widget(help, outer_layout[1]);
     }
 
     fn draw_edit(&mut self, frame: &mut Frame) {
@@ -412,24 +422,16 @@ impl App<'_> {
 
     fn reload_memos(&mut self) -> Result<()> {
         self.memos = load_memos()?;
-        // Ideally we want to preserve selection, but tree structure might change.
-        // For simplicity, just ensure something is selected if possible.
-        // But re-selecting root is safe.
-        // self.tree_state = TreeState::default(); // Reset state or keep? 
-        // If we keep state, invalid IDs might remain. 
-        // tui-tree-widget handles selection loosely (Vec<String>). 
-        // Let's reset for now to be safe, or just check validity.
-        // Or better: Just re-load memos. TreeState uses String IDs. 
-        // If a file was deleted, its ID is gone.
-        // Let's reset selection if empty.
-        if self.memos.is_empty() {
-             self.tree_state = TreeState::default(); 
-        } else {
-             // If nothing selected, select first
-             if self.tree_state.selected().is_empty() {
-                 self.tree_state.select_first(); 
-             }
+        
+        let mut new_state = TreeState::default();
+        let root_ids: Vec<String> = self.memos.iter().map(|m| m.id.clone()).collect();
+        new_state.open(root_ids);
+
+        if !self.memos.is_empty() {
+             new_state.select_first();
         }
+        
+        self.tree_state = new_state;
         Ok(())
     }
 }
