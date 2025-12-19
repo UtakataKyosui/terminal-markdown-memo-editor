@@ -96,10 +96,18 @@ impl App<'_> {
     }
 
     fn draw_list(&mut self, frame: &mut Frame) {
-        let layout = Layout::default()
+        // Vertical layout: [Main Area (List + Preview)] | [Help]
+        let outer_layout = Layout::default()
             .constraints([Constraint::Min(0), Constraint::Length(3)])
             .split(frame.area());
 
+        // Main Area: [List (30%)] | [Preview (70%)]
+        let main_layout = Layout::default()
+            .direction(ratatui::layout::Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(outer_layout[0]);
+
+        // --- Left: Memo List ---
         let items: Vec<ListItem> = self
             .memos
             .iter()
@@ -117,13 +125,59 @@ impl App<'_> {
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
             .highlight_symbol(">> ");
 
-        frame.render_stateful_widget(list, layout[0], &mut self.list_state);
+        frame.render_stateful_widget(list, main_layout[0], &mut self.list_state);
 
+        // --- Right: Preview ---
+        let block = Block::default().borders(Borders::ALL).title("Preview");
+        
+        let preview_content: Vec<Line> = if let Some(i) = self.list_state.selected() {
+            if let Some(memo) = self.memos.get(i) {
+                memo.content.lines().map(|line| {
+                    if line.starts_with("# ") {
+                        Line::from(Span::styled(
+                            line, 
+                            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                        ))
+                    } else if line.starts_with("## ") {
+                         Line::from(Span::styled(
+                            line, 
+                            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                        ))
+                    } else if line.starts_with("### ") {
+                         Line::from(Span::styled(
+                            line, 
+                            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                        ))
+                    } else if line.starts_with("- ") || line.starts_with("* ") {
+                         Line::from(Span::styled(
+                            line, 
+                            Style::default().fg(Color::White)
+                        ))
+                    } else {
+                        Line::from(line)
+                    }
+                }).collect()
+            } else {
+                vec![Line::from("No memo selected")]
+            }
+        } else {
+            vec![Line::from("No memo selected")]
+        };
+
+        // Use Paragraph for scrollable text? For now just simple Paragraph.
+        // We might want to support scrolling in preview later, but for now just show top.
+        let preview = Paragraph::new(preview_content)
+            .block(block)
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        
+        frame.render_widget(preview, main_layout[1]);
+
+        // --- Bottom: Help ---
         let help_text = "n: New | e/Enter: Edit | d: Delete | q: Quit | ↑/↓: Navigate";
         let help = Paragraph::new(help_text)
             .block(Block::default().borders(Borders::ALL))
             .style(Style::default().fg(Color::Gray));
-        frame.render_widget(help, layout[1]);
+        frame.render_widget(help, outer_layout[1]);
     }
 
     fn draw_edit(&mut self, frame: &mut Frame) {
