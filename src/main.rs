@@ -112,40 +112,38 @@ impl App<'_> {
 
         // --- Left: Memo Tree ---
         // Construct Tree Items:
-        // Root -> Date Dir -> Memo File -> Headers -> Paragraphs
+        // Root -> Memo File -> Headers -> Paragraphs
         
         let mut tree_items: Vec<TreeItem<String>> = Vec::new();
-        let mut current_date: Option<String> = None;
-        let mut current_date_items: Vec<TreeItem<String>> = Vec::new();
 
         for memo in &self.memos {
-             if let Some(parent) = memo.path.parent() {
-                let date_name = parent.file_name().unwrap_or_default().to_string_lossy().to_string();
-                
-                if Some(&date_name) != current_date.as_ref() {
-                    if let Some(d) = current_date {
-                        tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
-                    }
-                    current_date = Some(date_name);
-                    current_date_items = Vec::new();
-                }
+            // We flatly list memos.
+            // To make it distinct, maybe we want to include the date in the label?
+            // User just asked to remove hierarchy layer.
+            // Previously: List View showed "Title (filename)".
+            // Let's stick to Title, maybe append date/time if needed?
+            // "Title (YYYY-MM-DD HH:mm:ss)" might be nice, but for now just Title as before or Title (filename).
+            // Let's use Title (filename) to differentiate.
+            // Filename is HH-mm-ss.md. Parent is YYYY-MM-DD.
+            
+            let date_str = memo.path.parent().and_then(|p| p.file_name()).map(|s| s.to_string_lossy()).unwrap_or_default();
+            let time_str = memo.path.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+            let display_date = format!("{} {}", date_str, time_str);
 
-                let title = memo.title();
-                // Parse memo content into tree items
-                let memo_children = parse_markdown_to_tree(&memo.content, &memo.id);
-                
-                // Memo file is now a node with children (if any), otherwise leaf
-                let memo_item = if memo_children.is_empty() {
-                    TreeItem::new_leaf(memo.id.clone(), title)
-                } else {
-                    TreeItem::new(memo.id.clone(), title, memo_children).expect("memo id duplicate?")
-                };
-                
-                current_date_items.push(memo_item);
-             }
-        }
-        if let Some(d) = current_date {
-            tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
+            let title = memo.title();
+            let label = format!("{} ({})", title, display_date);
+
+            // Parse memo content into tree items
+            let memo_children = parse_markdown_to_tree(&memo.content, &memo.id);
+            
+            // Memo file is now a node with children (if any), otherwise leaf
+            let memo_item = if memo_children.is_empty() {
+                TreeItem::new_leaf(memo.id.clone(), label)
+            } else {
+                TreeItem::new(memo.id.clone(), label, memo_children).expect("memo id duplicate?")
+            };
+            
+            tree_items.push(memo_item);
         }
 
         let tree = Tree::new(&tree_items).unwrap()
