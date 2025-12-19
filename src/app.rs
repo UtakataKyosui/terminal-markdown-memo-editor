@@ -1,6 +1,6 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use itertools::Itertools;
+
 use ratatui::DefaultTerminal;
 use std::path::PathBuf;
 use tui_textarea::{Input, TextArea};
@@ -21,6 +21,8 @@ pub enum CurrentView {
 // Regex for Ordered list: ^(\s*)(\d+)\.\s+$ (check empty) or ^(\s*)(\d+)\.\s+(.*)
 static UNORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)([-*+])\s+").unwrap());
 static ORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)(\d+)\.\s+").unwrap());
+
+const SEARCH_PATTERN: &str = "(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)";
 
 pub struct App<'a> {
     pub should_quit: bool,
@@ -44,9 +46,7 @@ impl<'a> App<'a> {
         }
 
         let mut textarea = TextArea::default();
-        // Configure "Syntax Highlighting" (Hack using search pattern)
-        if let Err(_) = textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
-        textarea.set_search_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
+        Self::configure_textarea(&mut textarea);
 
         Ok(Self {
             should_quit: false,
@@ -56,6 +56,11 @@ impl<'a> App<'a> {
             textarea,
             editing_memo_path: None,
         })
+    }
+
+    fn configure_textarea(textarea: &mut TextArea<'a>) {
+        let _ = textarea.set_search_pattern(SEARCH_PATTERN);
+        textarea.set_search_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
     }
 
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -93,8 +98,7 @@ impl<'a> App<'a> {
                     self.view = CurrentView::Edit;
                     // Reset content but KEEP configuration
                     self.textarea = TextArea::default(); 
-                    if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
-                    self.textarea.set_search_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
+                    Self::configure_textarea(&mut self.textarea);
                     
                     self.editing_memo_path = None;
                 }
@@ -116,8 +120,7 @@ impl<'a> App<'a> {
                                 }
                             }
 
-                            if let Err(_) = self.textarea.set_search_pattern("(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)") { }
-                            self.textarea.set_search_style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD));
+                            Self::configure_textarea(&mut self.textarea);
 
                             self.editing_memo_path = Some(memo.path.clone());
                          } else {

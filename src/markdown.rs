@@ -1,7 +1,7 @@
 use tui_tree_widget::TreeItem;
 
 // --- Helper for Markdown Parsing ---
-pub fn parse_markdown_to_tree<'a>(content: &str, memo_id: &str) -> Vec<TreeItem<'static, String>> {
+pub fn parse_markdown_to_tree(content: &str, memo_id: &str) -> Vec<TreeItem<'static, String>> {
     fn parse_recursive(
         iter: &mut std::iter::Peekable<std::slice::Iter<(usize, &str)>>, 
         min_level: usize,
@@ -16,12 +16,12 @@ pub fn parse_markdown_to_tree<'a>(content: &str, memo_id: &str) -> Vec<TreeItem<
                 continue; 
             }
             
-            let (level, text) = if trimmed.starts_with("# ") { (1, trimmed[2..].to_string()) }
-            else if trimmed.starts_with("## ") { (2, trimmed[3..].to_string()) }
-            else if trimmed.starts_with("### ") { (3, trimmed[4..].to_string()) }
-            else if trimmed.starts_with("#### ") { (4, trimmed[5..].to_string()) }
-            else if trimmed.starts_with("##### ") { (5, trimmed[6..].to_string()) }
-            else if trimmed.starts_with("###### ") { (6, trimmed[7..].to_string()) }
+            let (level, text) = if let Some(stripped) = trimmed.strip_prefix("# ") { (1, stripped.to_string()) }
+            else if let Some(stripped) = trimmed.strip_prefix("## ") { (2, stripped.to_string()) }
+            else if let Some(stripped) = trimmed.strip_prefix("### ") { (3, stripped.to_string()) }
+            else if let Some(stripped) = trimmed.strip_prefix("#### ") { (4, stripped.to_string()) }
+            else if let Some(stripped) = trimmed.strip_prefix("##### ") { (5, stripped.to_string()) }
+            else if let Some(stripped) = trimmed.strip_prefix("###### ") { (6, stripped.to_string()) }
             else { (7, trimmed.to_string()) }; // 7 = Paragraph
             
             if level < min_level {

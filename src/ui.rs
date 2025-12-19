@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -97,12 +97,10 @@ fn draw_list(app: &mut App, frame: &mut Frame) {
                     Line::from(line)
                 }
             }).collect()
+        } else if path_str.contains(std::path::MAIN_SEPARATOR) {
+             vec![Line::from(format!("Selected: {}", selected_id))]
         } else {
-             if path_str.contains(std::path::MAIN_SEPARATOR) {
-                  vec![Line::from(format!("Selected: {}", selected_id))]
-             } else {
-                  vec![Line::from("Directory selected")]
-             }
+             vec![Line::from("Directory selected")]
         }
     } else {
         vec![Line::from("No selection")]

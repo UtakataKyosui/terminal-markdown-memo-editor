@@ -1,7 +1,7 @@
 use color_eyre::eyre::Context;
 use color_eyre::Result;
 use chrono::Local;
-use serde::{Deserialize, Serialize};
+
 use std::fs;
 use std::path::{PathBuf};
 
@@ -71,7 +71,7 @@ pub fn load_memos() -> Result<Vec<Memo>> {
             for sub_entry in fs::read_dir(&path)? {
                 let sub_entry = sub_entry?;
                 let sub_path = sub_entry.path();
-                if sub_path.extension().map_or(false, |ext| ext == "md") {
+                if sub_path.extension().is_some_and(|ext| ext == "md") {
                     let content = fs::read_to_string(&sub_path)?;
                     // Use relative path as ID for cleaner tree if needed, 
                     // but absolute path is fine for uniqueness.
@@ -112,12 +112,14 @@ mod tests {
         let memo = Memo {
             path: PathBuf::from("dummy"),
             content: "Title\nBody content".to_string(),
+            id: "dummy".to_string(),
         };
         assert_eq!(memo.title(), "Title");
 
         let memo_empty = Memo {
             path: PathBuf::from("dummy"),
             content: "".to_string(),
+            id: "dummy".to_string(),
         };
         assert_eq!(memo_empty.title(), "New Memo");
     }
