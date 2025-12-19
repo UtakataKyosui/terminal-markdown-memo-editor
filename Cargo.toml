@@ -21,6 +21,7 @@ anyhow = "1.0"
 regex = "1.12.2"
 once_cell = "1.21.3"
 tui-tree-widget = "0.23.1"
+itertools = "0.14.0"
 
 # Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
 [profile.release]
