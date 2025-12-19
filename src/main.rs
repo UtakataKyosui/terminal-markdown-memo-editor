@@ -468,6 +468,11 @@ fn parse_markdown_to_tree(content: &str, memo_id: &str) -> Vec<TreeItem<'static,
             // Consume this line
             iter.next();
             
+            // Ignore paragraphs (level 7) in tree view
+            if level == 7 {
+                continue;
+            }
+            
             let children = if level < 7 {
                 parse_recursive(iter, level + 1, memo_id)
             } else {
