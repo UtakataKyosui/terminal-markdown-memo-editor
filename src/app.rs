@@ -174,12 +174,48 @@ impl<'a> App<'a> {
                     // Copy Current Line: Alt+c
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::ALT) => {
                          if let Some(clipboard) = &mut self.clipboard {
-                             let cursor = self.textarea.cursor();
-                             let current_row = cursor.0;
-                             if current_row < self.textarea.lines().len() {
-                                 let line = &self.textarea.lines()[current_row];
-                                 let _ = clipboard.set_text(line.clone());
-                             }
+                                 // Copy selection if exists, otherwise copy current line
+                                 if let Some((start, end)) = self.textarea.selection_range() {
+                                     let (start_row, start_col) = start;
+                                     let (end_row, end_col) = end;
+                                     
+                                     let mut selected_text = String::new();
+                                     let lines = self.textarea.lines();
+                                     
+                                     // Ensure rows are within bounds
+                                     if start_row < lines.len() {
+                                         let limit_row = std::cmp::min(end_row, lines.len() - 1);
+                                         
+                                         for row in start_row..=limit_row {
+                                             let line = &lines[row];
+                                             
+                                             let s_col = if row == start_row { start_col } else { 0 };
+                                             let e_col = if row == end_row { end_col } else { line.chars().count() };
+                                             
+                                             // Extract substring using iterator to handle UTF-8 safely
+                                             let part: String = line.chars()
+                                                 .skip(s_col)
+                                                 .take(e_col.saturating_sub(s_col))
+                                                 .collect();
+                                                 
+                                             selected_text.push_str(&part);
+                                             
+                                             if row != limit_row {
+                                                 selected_text.push('\n');
+                                             }
+                                         }
+                                         
+                                         let _ = clipboard.set_text(selected_text);
+                                     }
+                                 } else {
+                                     // Fallback: Copy current line
+                                     let cursor = self.textarea.cursor();
+                                     let current_row = cursor.0;
+                                     if current_row < self.textarea.lines().len() {
+                                         let line = &self.textarea.lines()[current_row];
+                                         let _ = clipboard.set_text(line.clone());
+                                     }
+                                 }
                          }
                     }
                     KeyCode::Enter => {
