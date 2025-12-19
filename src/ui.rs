@@ -132,7 +132,7 @@ fn draw_edit(app: &mut App, frame: &mut Frame) {
     );
     frame.render_widget(&app.textarea, layout[0]);
 
-    let help_text = "Esc: Save & Exit | Ctrl+s: Save | Ctrl+c: Cancel";
+    let help_text = "Esc: 保存終了 | Ctrl+s: 保存 | Ctrl+c: キャンセル | Ctrl+v: 貼付 | Alt+c: コピー";
     let help = Paragraph::new(help_text)
         .block(Block::default().borders(Borders::ALL))
         .style(Style::default().fg(Color::Gray));

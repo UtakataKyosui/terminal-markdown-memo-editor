@@ -24,6 +24,8 @@ static ORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)(\d+)\.\s+
 
 const SEARCH_PATTERN: &str = "(^#{1,6} .+$)|(\\*\\*.+?\\*\\*)";
 
+use arboard::Clipboard;
+
 pub struct App<'a> {
     pub should_quit: bool,
     pub view: CurrentView,
@@ -31,6 +33,7 @@ pub struct App<'a> {
     pub tree_state: TreeState<String>,
     pub textarea: TextArea<'a>,
     pub editing_memo_path: Option<PathBuf>,
+    pub clipboard: Option<Clipboard>,
 }
 
 impl<'a> App<'a> {
@@ -48,6 +51,8 @@ impl<'a> App<'a> {
         let mut textarea = TextArea::default();
         Self::configure_textarea(&mut textarea);
 
+        let clipboard = Clipboard::new().ok();
+
         Ok(Self {
             should_quit: false,
             view: CurrentView::List,
@@ -55,6 +60,7 @@ impl<'a> App<'a> {
             tree_state,
             textarea,
             editing_memo_path: None,
+            clipboard,
         })
     }
 
@@ -152,6 +158,29 @@ impl<'a> App<'a> {
                     }
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.view = CurrentView::List;
+                    }
+                    // Paste: Ctrl+v
+                    KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        if let Some(clipboard) = &mut self.clipboard {
+                            if let Ok(text) = clipboard.get_text() {
+                                // Fix newlines for tui-textarea which might expect specific format?
+                                // tui-textarea insert_str handles strings generally.
+                                // However, we should be careful about Windows CR LF.
+                                let text = text.replace("\r\n", "\n");
+                                self.textarea.insert_str(text);
+                            }
+                        }
+                    }
+                    // Copy Current Line: Alt+c
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::ALT) => {
+                         if let Some(clipboard) = &mut self.clipboard {
+                             let cursor = self.textarea.cursor();
+                             let current_row = cursor.0;
+                             if current_row < self.textarea.lines().len() {
+                                 let line = &self.textarea.lines()[current_row];
+                                 let _ = clipboard.set_text(line.clone());
+                             }
+                         }
                     }
                     KeyCode::Enter => {
                         // Handle auto-list logic
