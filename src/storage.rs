@@ -5,11 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{PathBuf};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Memo {
     pub path: PathBuf,
     pub content: String,
-    // We derive metadata from file system
+    // Add an ID for TreeState (e.g., relative path string)
+    pub id: String,
 }
 
 impl Memo {
@@ -24,8 +25,9 @@ impl Memo {
         let path = root.join(date_part).join(time_part);
 
         Self {
-            path,
+            path: path.clone(),
             content,
+            id: path.to_string_lossy().to_string(), // Temporary, will be updated relative to root usually
         }
     }
 
@@ -71,9 +73,14 @@ pub fn load_memos() -> Result<Vec<Memo>> {
                 let sub_path = sub_entry.path();
                 if sub_path.extension().map_or(false, |ext| ext == "md") {
                     let content = fs::read_to_string(&sub_path)?;
+                    // Use relative path as ID for cleaner tree if needed, 
+                    // but absolute path is fine for uniqueness.
+                    // Let's use relative to show nice in tree? 
+                    // No, ID uses strings. 
                     memos.push(Memo {
-                        path: sub_path,
+                        path: sub_path.clone(),
                         content,
+                        id: sub_path.to_string_lossy().to_string(),
                     });
                 }
             }

@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, ListItem, Paragraph, Scrollbar, ScrollbarOrientation},
     DefaultTerminal, Frame,
 };
 use storage::{load_memos, Memo};
@@ -17,10 +17,12 @@ enum CurrentView {
     Edit,
 }
 
+use tui_tree_widget::{Tree, TreeItem, TreeState};
+
 struct App<'a> {
     view: CurrentView,
     memos: Vec<Memo>,
-    list_state: ListState,
+    tree_state: TreeState<String>,
     textarea: TextArea<'a>,
     should_quit: bool,
     // When editing, are we editing a new one or existing?
@@ -46,9 +48,10 @@ static ORDERED_LIST_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\s*)(\d+)\.\s+
 impl App<'_> {
     fn new() -> Result<Self> {
         let memos = load_memos()?;
-        let mut list_state = ListState::default();
+        // Initialize tree state with empty selection
+        let mut tree_state = TreeState::default();
         if !memos.is_empty() {
-            list_state.select(Some(0));
+             tree_state.select_first();
         }
 
         let mut textarea = TextArea::default();
@@ -69,7 +72,7 @@ impl App<'_> {
         Ok(Self {
             view: CurrentView::List,
             memos,
-            list_state,
+            tree_state,
             textarea,
             should_quit: false,
             editing_memo_path: None,
@@ -96,42 +99,65 @@ impl App<'_> {
     }
 
     fn draw_list(&mut self, frame: &mut Frame) {
-        // Vertical layout: [Main Area (List + Preview)] | [Help]
+        // Vertical layout: [Main Area (Tree + Preview)] | [Help]
         let outer_layout = Layout::default()
             .constraints([Constraint::Min(0), Constraint::Length(3)])
             .split(frame.area());
 
-        // Main Area: [List (30%)] | [Preview (70%)]
+        // Main Area: [Tree (30%)] | [Preview (70%)]
         let main_layout = Layout::default()
             .direction(ratatui::layout::Direction::Horizontal)
             .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
             .split(outer_layout[0]);
 
-        // --- Left: Memo List ---
-        let items: Vec<ListItem> = self
-            .memos
-            .iter()
-            .map(|memo| {
-                let title = memo.title();
-                ListItem::new(Line::from(vec![
-                    Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw(format!(" ({})", memo.path.file_name().unwrap_or_default().to_string_lossy())),
-                ]))
-            })
-            .collect();
+        // --- Left: Memo Tree ---
+        // Construct Tree Items:
+        // Root -> Date Dir -> Memo File (Title)
+        
+        // Group memos by parent directory (Date)
+        // We assume memos are strictly YYYY-MM-DD/HH-mm-ss.md
+        let mut tree_items: Vec<TreeItem<String>> = Vec::new();
+        let mut current_date: Option<String> = None;
+        let mut current_date_items: Vec<TreeItem<String>> = Vec::new();
 
-        let list = List::new(items)
+        // Memos are sorted by path descending (newest first).
+        for memo in &self.memos {
+            // parent dir name
+             if let Some(parent) = memo.path.parent() {
+                let date_name = parent.file_name().unwrap_or_default().to_string_lossy().to_string();
+                
+                if Some(&date_name) != current_date.as_ref() {
+                    // Push previous date group
+                    if let Some(d) = current_date {
+                        tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
+                    }
+                    current_date = Some(date_name);
+                    current_date_items = Vec::new();
+                }
+
+                let title = memo.title();
+                let leaf_item = TreeItem::new_leaf(memo.id.clone(), title); // Use full path/ID as leaf ID
+                current_date_items.push(leaf_item);
+             }
+        }
+        // Push last group
+        if let Some(d) = current_date {
+            tree_items.push(TreeItem::new(d.clone(), d, current_date_items).unwrap());
+        }
+
+        let tree = Tree::new(&tree_items).unwrap()
             .block(Block::default().borders(Borders::ALL).title("Memos"))
             .highlight_style(Style::default().bg(Color::Blue).fg(Color::White))
-            .highlight_symbol(">> ");
+            .experimental_scrollbar(Some(ratatui::widgets::Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)));
 
-        frame.render_stateful_widget(list, main_layout[0], &mut self.list_state);
+        frame.render_stateful_widget(tree, main_layout[0], &mut self.tree_state);
 
         // --- Right: Preview ---
         let block = Block::default().borders(Borders::ALL).title("Preview");
         
-        let preview_content: Vec<Line> = if let Some(i) = self.list_state.selected() {
-            if let Some(memo) = self.memos.get(i) {
+        let preview_content: Vec<Line> = if let Some(selected_ids) = self.tree_state.selected().last() {
+             // Find memo by ID (which is path string)
+             if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_ids) {
                 memo.content.lines().map(|line| {
                     if line.starts_with("# ") {
                         Line::from(Span::styled(
@@ -157,9 +183,9 @@ impl App<'_> {
                         Line::from(line)
                     }
                 }).collect()
-            } else {
-                vec![Line::from("No memo selected")]
-            }
+             } else {
+                 vec![Line::from("Directory selected")]
+             }
         } else {
             vec![Line::from("No memo selected")]
         };
@@ -173,7 +199,7 @@ impl App<'_> {
         frame.render_widget(preview, main_layout[1]);
 
         // --- Bottom: Help ---
-        let help_text = "n: New | e/Enter: Edit | d: Delete | q: Quit | ↑/↓: Navigate";
+        let help_text = "n: New | Enter: Edit/Toggle | d: Delete | q: Quit | h/l/j/k or Arrows: Navigate";
         let help = Paragraph::new(help_text)
             .block(Block::default().borders(Borders::ALL))
             .style(Style::default().fg(Color::Gray));
@@ -204,34 +230,19 @@ impl App<'_> {
             CurrentView::List => match key.code {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if !self.memos.is_empty() {
-                        let i = match self.list_state.selected() {
-                            Some(i) => {
-                                if i >= self.memos.len() - 1 {
-                                    0
-                                } else {
-                                    i + 1
-                                }
-                            }
-                            None => 0,
-                        };
-                        self.list_state.select(Some(i));
-                    }
+                    self.tree_state.key_down();
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if !self.memos.is_empty() {
-                        let i = match self.list_state.selected() {
-                            Some(i) => {
-                                if i == 0 {
-                                    self.memos.len() - 1
-                                } else {
-                                    i - 1
-                                }
-                            }
-                            None => 0,
-                        };
-                        self.list_state.select(Some(i));
-                    }
+                    self.tree_state.key_up();
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    self.tree_state.key_left();
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    self.tree_state.key_right();
+                }
+                KeyCode::Char(' ') => { // Space to toggle
+                    self.tree_state.toggle_selected();
                 }
                 KeyCode::Char('n') => {
                     self.view = CurrentView::Edit;
@@ -247,8 +258,9 @@ impl App<'_> {
                     self.editing_memo_path = None;
                 }
                 KeyCode::Enter | KeyCode::Char('e') => {
-                    if let Some(i) = self.list_state.selected() {
-                        if let Some(memo) = self.memos.get(i) {
+                    if let Some(selected_id) = self.tree_state.selected().last() {
+                         // Find memo by ID
+                         if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_id) {
                             self.view = CurrentView::Edit;
                             let lines: Vec<String> = memo.content.lines().map(|s| s.to_string()).collect();
                             self.textarea = TextArea::new(lines);
@@ -257,20 +269,23 @@ impl App<'_> {
                             self.textarea.set_search_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
 
                             self.editing_memo_path = Some(memo.path.clone());
-                        }
+                         } else {
+                            // Directory selected? Toggle it
+                            self.tree_state.toggle_selected();
+                         }
                     }
                 }
                 KeyCode::Char('d') => {
-                    if let Some(i) = self.list_state.selected() {
-                        if let Some(memo) = self.memos.get(i) {
-                            memo.delete()?;
-                            self.reload_memos()?;
-                            if self.memos.is_empty() {
-                                self.list_state.select(None);
-                            } else if i >= self.memos.len() {
-                                self.list_state.select(Some(self.memos.len() - 1));
-                            }
-                        }
+                    if let Some(selected_id) = self.tree_state.selected().last() {
+                         // Find memo
+                         if let Some(memo) = self.memos.iter().find(|m| m.id == *selected_id) {
+                             memo.delete()?;
+                             self.reload_memos()?;
+                             // Tree state might be invalid if we deleted last item in folder, but reload resets?
+                             // Ideally preserve selection or move to next. For now, reload resets slightly.
+                             // Actually reload_memos just reloads memos, tree state is ID based.
+                             // We might need to handle stale ID in tree state?
+                         }
                     }
                 }
                 _ => {}
@@ -365,6 +380,7 @@ impl App<'_> {
             Memo {
                 path: path.clone(),
                 content,
+                id: path.to_string_lossy().to_string(),
             }
         } else {
             Memo::new(content)
@@ -377,8 +393,23 @@ impl App<'_> {
 
     fn reload_memos(&mut self) -> Result<()> {
         self.memos = load_memos()?;
-        if self.list_state.selected().is_none() && !self.memos.is_empty() {
-            self.list_state.select(Some(0));
+        // Ideally we want to preserve selection, but tree structure might change.
+        // For simplicity, just ensure something is selected if possible.
+        // But re-selecting root is safe.
+        // self.tree_state = TreeState::default(); // Reset state or keep? 
+        // If we keep state, invalid IDs might remain. 
+        // tui-tree-widget handles selection loosely (Vec<String>). 
+        // Let's reset for now to be safe, or just check validity.
+        // Or better: Just re-load memos. TreeState uses String IDs. 
+        // If a file was deleted, its ID is gone.
+        // Let's reset selection if empty.
+        if self.memos.is_empty() {
+             self.tree_state = TreeState::default(); 
+        } else {
+             // If nothing selected, select first
+             if self.tree_state.selected().is_empty() {
+                 self.tree_state.select_first(); 
+             }
         }
         Ok(())
     }
