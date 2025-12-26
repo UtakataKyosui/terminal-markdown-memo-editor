@@ -9,7 +9,7 @@ edition = "2021"
 [dependencies]
 color-eyre = "0.6.3"
 crossterm = "0.28.0" # Downgraded to match common compatibility or keep 0.29 if safe. Template used 0.29.
-ratatui = "0.29.0" # Using stable instead of beta if possible, but template had 0.30-beta. I'll stick to 0.29 stable for compatibility with tui-textarea if needed, or check tui-textarea version.
+ratatui = "0.30.0" # Using stable instead of beta if possible, but template had 0.30-beta. I'll stick to 0.29 stable for compatibility with tui-textarea if needed, or check tui-textarea version.
 # tui-textarea 0.7 supports ratatui 0.29.
 tui-textarea = "0.7"
 dirs = "5.0"
